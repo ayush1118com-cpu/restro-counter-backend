@@ -26,7 +26,13 @@ const app: Application = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(
   cors({
-    origin: [env.FRONTEND_URL, 'http://localhost:3000', 'http://127.0.0.1:3000'],
+    origin: [
+      env.FRONTEND_URL,
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      'https://restro-counter.vercel.app',
+      'https://restro-counter-system.vercel.app',
+    ],
     credentials: true,
   })
 );
