@@ -16,7 +16,7 @@ export class MenuService {
       throw new AppError('Specified Category not found in your restaurant menu.', 404, ERROR_CODES.NOT_FOUND);
     }
 
-    let imageData;
+    let imageData = data.image; // Assume existing URL or base64
     if (imageFile) {
       imageData = await CloudinaryService.uploadImage(imageFile.buffer, 'restro-counter/menu');
     }
@@ -110,6 +110,8 @@ export class MenuService {
       }
       const imageData = await CloudinaryService.uploadImage(imageFile.buffer, 'restro-counter/menu');
       menuItem.image = imageData;
+    } else if (data.image !== undefined) {
+      menuItem.image = data.image;
     }
 
     if (data.name) menuItem.name = data.name;
