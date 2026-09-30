@@ -8,6 +8,7 @@ export const createMenuItemSchema = z.object({
   discountPrice: z.coerce.number().min(0).optional(),
   requiresKitchen: z.preprocess((val) => val === 'true' || val === true, z.boolean().optional()),
   isAvailable: z.preprocess((val) => val === 'true' || val === true, z.boolean().optional()),
+  image: z.string().optional(),
 });
 
 export const updateMenuItemSchema = z.object({
@@ -19,6 +20,7 @@ export const updateMenuItemSchema = z.object({
   requiresKitchen: z.preprocess((val) => val === 'true' || val === true, z.boolean().optional()),
   isAvailable: z.preprocess((val) => val === 'true' || val === true, z.boolean().optional()),
   isActive: z.preprocess((val) => val === 'true' || val === true, z.boolean().optional()),
+  image: z.string().optional(),
 });
 
 export const updateMenuAvailabilitySchema = z.object({

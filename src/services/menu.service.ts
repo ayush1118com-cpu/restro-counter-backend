@@ -16,9 +16,15 @@ export class MenuService {
       throw new AppError('Specified Category not found in your restaurant menu.', 404, ERROR_CODES.NOT_FOUND);
     }
 
-    let imageData = data.image; // Assume existing URL or base64
+    let imageData = undefined;
     if (imageFile) {
       imageData = await CloudinaryService.uploadImage(imageFile.buffer, 'restro-counter/menu');
+    } else if (data.image && data.image.startsWith('data:image')) {
+      const base64Data = data.image.replace(/^data:image\/\w+;base64,/, "");
+      const buffer = Buffer.from(base64Data, 'base64');
+      imageData = await CloudinaryService.uploadImage(buffer, 'restro-counter/menu');
+    } else if (typeof data.image === 'string' && data.image.startsWith('http')) {
+      imageData = { secure_url: data.image, public_id: '' };
     }
 
     const menuItem = await MenuItem.create({
@@ -110,8 +116,21 @@ export class MenuService {
       }
       const imageData = await CloudinaryService.uploadImage(imageFile.buffer, 'restro-counter/menu');
       menuItem.image = imageData;
-    } else if (data.image !== undefined) {
-      menuItem.image = data.image;
+    } else if (data.image && data.image.startsWith('data:image')) {
+      if (menuItem.image?.public_id) {
+        await CloudinaryService.deleteImage(menuItem.image.public_id);
+      }
+      const base64Data = data.image.replace(/^data:image\/\w+;base64,/, "");
+      const buffer = Buffer.from(base64Data, 'base64');
+      const uploadResult = await CloudinaryService.uploadImage(buffer, 'restro-counter/menu');
+      menuItem.image = uploadResult;
+    } else if (typeof data.image === 'string' && data.image.startsWith('http')) {
+      menuItem.image = { secure_url: data.image, public_id: '' };
+    } else if (data.image === '') {
+      if (menuItem.image?.public_id) {
+        await CloudinaryService.deleteImage(menuItem.image.public_id);
+      }
+      menuItem.image = undefined;
     }
 
     if (data.name) menuItem.name = data.name;
@@ -150,3 +169,6 @@ export class MenuService {
     return true;
   }
 }
+
+
+
