@@ -3,7 +3,7 @@ import { AuthService } from '../services/auth.service.js';
 import { loginSchema, changePasswordSchema, refreshTokenSchema } from '../validators/auth.validator.js';
 import { sendSuccess } from '../utils/response.js';
 import { AuthRequest } from '../types/index.js';
-
+// drjgoerihoi
 export class AuthController {
   public static async login(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
