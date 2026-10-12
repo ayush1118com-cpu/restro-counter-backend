@@ -8,7 +8,7 @@ import { ROLES } from '../constants/index.js';
 const router = Router();
 
 router.use(authenticate);
-router.use(authorize(ROLES.RESTAURANT_ADMIN));
+router.use(authorize(ROLES.RESTAURANT_ADMIN, ROLES.KITCHEN_STAFF));
 router.use(requireRestaurant);
 
 router.post('/', PaymentController.create);

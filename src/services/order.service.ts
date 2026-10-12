@@ -74,6 +74,7 @@ export class OrderService {
         price: unitPrice,
         total: itemTotal,
         requiresKitchen,
+        notes: reqItem.notes,
       });
     }
 
@@ -276,6 +277,7 @@ export class OrderService {
         quantity: item.quantity,
         price: item.price,
         total: item.total,
+        notes: item.notes,
       })),
       pricing: {
         subtotal: order.subtotal,
@@ -283,6 +285,122 @@ export class OrderService {
         tax: order.tax,
         grandTotal: order.grandTotal,
       },
+      billFooter: {
+        thankYouMessage: 'Thank you for dining with us!',
+        poweredBy: 'Powered by ServDesk',
+        contact: '8385973582',
+      },
     };
   }
+
+  public static async addItemsToOrder(
+    restaurantId: string,
+    id: string,
+    requestItems: { menuItemId: string; quantity: number }[],
+    paymentMethod?: string
+  ) {
+    const order = await Order.findOne({ _id: id, restaurantId });
+    if (!order) {
+      throw new AppError('Order not found.', 404, ERROR_CODES.NOT_FOUND);
+    }
+    if (order.orderStatus === ORDER_STATUS.CANCELLED) {
+      throw new AppError('Cannot add items to a cancelled order.', 400, ERROR_CODES.BAD_REQUEST);
+    }
+
+    const menuItemIds = requestItems.map((item) => item.menuItemId);
+    const dbMenuItems = await MenuItem.find({
+      _id: { $in: menuItemIds },
+      restaurantId,
+    });
+
+    if (dbMenuItems.length !== menuItemIds.length) {
+      throw new AppError(
+        'One or more ordered menu items were not found or do not belong to your restaurant.',
+        400,
+        ERROR_CODES.BAD_REQUEST
+      );
+    }
+
+    const dbMenuMap = new Map<string, any>();
+    for (const item of dbMenuItems) {
+      if (!item.isActive || !item.isAvailable) {
+        throw new AppError(
+          `Item '${item.name}' is currently unavailable for order.`,
+          400,
+          ERROR_CODES.BAD_REQUEST
+        );
+      }
+      dbMenuMap.set((item._id as any).toString(), item);
+    }
+
+    let hasKitchenItem = false;
+
+    for (const reqItem of requestItems) {
+      const dbItem = dbMenuMap.get(reqItem.menuItemId);
+      const unitPrice = dbItem.discountPrice && dbItem.discountPrice > 0 ? dbItem.discountPrice : dbItem.price;
+      const itemTotal = unitPrice * reqItem.quantity;
+      const requiresKitchen = dbItem.requiresKitchen !== false;
+
+      if (requiresKitchen) {
+        hasKitchenItem = true;
+      }
+
+      // Check if item already exists in order
+      const existingItem = order.items.find(
+        (it) => it.menuItemId.toString() === dbItem._id.toString()
+      );
+
+      if (existingItem) {
+        existingItem.quantity += reqItem.quantity;
+        existingItem.total += itemTotal;
+        if ((reqItem as any).notes) {
+          existingItem.notes = existingItem.notes
+            ? `${existingItem.notes}, ${(reqItem as any).notes}`
+            : (reqItem as any).notes;
+        }
+      } else {
+        order.items.push({
+          menuItemId: dbItem._id,
+          name: dbItem.name,
+          quantity: reqItem.quantity,
+          price: unitPrice,
+          total: itemTotal,
+          requiresKitchen,
+          notes: (reqItem as any).notes,
+        });
+      }
+    }
+
+    // Recalculate totals
+    const subtotal = order.items.reduce((acc, it) => acc + it.total, 0);
+    const tax = Math.round(subtotal * 0.05); // 5% GST
+    const grandTotal = Math.max(0, subtotal - (order.discount || 0) + tax);
+
+    order.subtotal = subtotal;
+    order.tax = tax;
+    order.grandTotal = grandTotal;
+
+    if (hasKitchenItem && (order.orderStatus === ORDER_STATUS.COMPLETED || order.orderStatus === ORDER_STATUS.READY)) {
+      order.orderStatus = ORDER_STATUS.PREPARING;
+    }
+
+    if (paymentMethod) {
+      order.paymentMethod = paymentMethod as any;
+    }
+
+    await order.save();
+
+    const populatedOrder = await Order.findById(order._id)
+      .populate('createdBy', 'name email')
+      .lean();
+
+    SocketEventService.emitOrderStatusChange(
+      restaurantId,
+      SOCKET_EVENTS.ORDER_PREPARING,
+      populatedOrder
+    );
+
+    return populatedOrder;
+  }
 }
+

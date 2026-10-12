@@ -10,8 +10,8 @@ const router = Router();
 router.use(authenticate);
 router.use(requireRestaurant);
 
-// Create order (Counter POS / Admin)
-router.post('/', authorize(ROLES.RESTAURANT_ADMIN), OrderController.create);
+// Create order (Counter POS / Admin / Kitchen Staff)
+router.post('/', authorize(ROLES.RESTAURANT_ADMIN, ROLES.KITCHEN_STAFF), OrderController.create);
 
 // Order List & Details (Admin & Kitchen Staff)
 router.get('/', authorize(ROLES.RESTAURANT_ADMIN, ROLES.KITCHEN_STAFF), OrderController.getAll);
@@ -20,5 +20,8 @@ router.get('/:id/bill', authorize(ROLES.RESTAURANT_ADMIN, ROLES.KITCHEN_STAFF), 
 
 // Update Status (Admin & Kitchen Staff)
 router.patch('/:id/status', authorize(ROLES.RESTAURANT_ADMIN, ROLES.KITCHEN_STAFF), OrderController.updateStatus);
+
+// Add items to existing order (Counter POS / Admin / Kitchen Staff)
+router.post('/:id/items', authorize(ROLES.RESTAURANT_ADMIN, ROLES.KITCHEN_STAFF), OrderController.addItems);
 
 export default router;

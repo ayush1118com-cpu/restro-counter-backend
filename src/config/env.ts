@@ -20,4 +20,7 @@ export const env = {
   SEED_ADMIN_PASSWORD: process.env.SEED_ADMIN_PASSWORD || 'SuperAdmin123!',
   SEED_RESTAURANT_ADMIN_EMAIL: process.env.SEED_RESTAURANT_ADMIN_EMAIL || 'restaurant@restrocounter.com',
   SEED_RESTAURANT_ADMIN_PASSWORD: process.env.SEED_RESTAURANT_ADMIN_PASSWORD || 'RestroAdmin123!',
+  BREVO_API_KEY: process.env.BREVO_API_KEY || '',
+  BREVO_SENDER_EMAIL: process.env.BREVO_SENDER_EMAIL || 'alvora.tech.solution@gmail.com',
+  BREVO_SENDER_NAME: process.env.BREVO_SENDER_NAME || 'ServDesk',
 };

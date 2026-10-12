@@ -6,6 +6,7 @@ import { AppError } from '../middleware/error.middleware.js';
 import { ERROR_CODES, RESTAURANT_STATUS, ROLES } from '../constants/index.js';
 import { ParsedPagination } from '../utils/pagination.js';
 import { CloudinaryService } from './cloudinary.service.js';
+import { EmailService } from './email.service.js';
 
 export class RestaurantService {
   public static async createRestaurant(data: any, logoFile?: Express.Multer.File) {
@@ -61,6 +62,19 @@ export class RestaurantService {
       role: ROLES.KITCHEN_STAFF,
       restaurantId: restaurant._id,
       isActive: true,
+    });
+
+    // Send Onboarding Credentials Email via Brevo asynchronously (non-blocking)
+    EmailService.sendRestaurantOnboardingEmail({
+      toEmail: email || adminEmail,
+      recipientName: ownerName,
+      restaurantName: name,
+      adminEmail: adminEmail.toLowerCase(),
+      adminPassword,
+      kitchenEmail,
+      kitchenPassword,
+    }).catch((err) => {
+      console.error('Failed to dispatch onboarding email:', err);
     });
 
     return {

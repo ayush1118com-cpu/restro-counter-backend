@@ -15,6 +15,7 @@ export interface IOrderItem {
   price: number;
   total: number;
   requiresKitchen?: boolean;
+  notes?: string;
 }
 
 export interface IOrder extends Document {
@@ -64,6 +65,10 @@ const OrderItemSchema = new Schema<IOrderItem>(
     requiresKitchen: {
       type: Boolean,
       default: true,
+    },
+    notes: {
+      type: String,
+      trim: true,
     },
   },
   { _id: false }

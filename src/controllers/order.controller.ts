@@ -1,6 +1,6 @@
 import { Response, NextFunction } from 'express';
 import { OrderService } from '../services/order.service.js';
-import { createOrderSchema, updateOrderStatusSchema } from '../validators/order.validator.js';
+import { createOrderSchema, updateOrderStatusSchema, addOrderItemsSchema } from '../validators/order.validator.js';
 import { sendSuccess, sendPaginated } from '../utils/response.js';
 import { parsePagination } from '../utils/pagination.js';
 import { AuthRequest } from '../types/index.js';
@@ -64,6 +64,22 @@ export class OrderController {
       const id = req.params.id as string;
       const billData = await OrderService.getOrderBill(req.user!.restaurantId!, id);
       sendSuccess(res, 'Order bill data retrieved for printing', billData);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  public static async addItems(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const id = req.params.id as string;
+      const validatedData = addOrderItemsSchema.parse(req.body);
+      const order = await OrderService.addItemsToOrder(
+        req.user!.restaurantId!,
+        id,
+        validatedData.items,
+        validatedData.paymentMethod
+      );
+      sendSuccess(res, 'Items added to order successfully', order);
     } catch (error) {
       next(error);
     }

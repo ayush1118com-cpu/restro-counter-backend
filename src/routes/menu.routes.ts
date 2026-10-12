@@ -9,14 +9,13 @@ import { ROLES } from '../constants/index.js';
 const router = Router();
 
 router.use(authenticate);
-router.use(authorize(ROLES.RESTAURANT_ADMIN));
 router.use(requireRestaurant);
 
-router.post('/', uploadSingleImage('image'), MenuController.create);
-router.get('/', MenuController.getAll);
-router.get('/:id', MenuController.getById);
-router.patch('/:id', uploadSingleImage('image'), MenuController.update);
-router.patch('/:id/availability', MenuController.updateAvailability);
-router.delete('/:id', MenuController.delete);
+router.post('/', authorize(ROLES.RESTAURANT_ADMIN), uploadSingleImage('image'), MenuController.create);
+router.get('/', authorize(ROLES.RESTAURANT_ADMIN, ROLES.KITCHEN_STAFF), MenuController.getAll);
+router.get('/:id', authorize(ROLES.RESTAURANT_ADMIN, ROLES.KITCHEN_STAFF), MenuController.getById);
+router.patch('/:id', authorize(ROLES.RESTAURANT_ADMIN), uploadSingleImage('image'), MenuController.update);
+router.patch('/:id/availability', authorize(ROLES.RESTAURANT_ADMIN, ROLES.KITCHEN_STAFF), MenuController.updateAvailability);
+router.delete('/:id', authorize(ROLES.RESTAURANT_ADMIN), MenuController.delete);
 
 export default router;

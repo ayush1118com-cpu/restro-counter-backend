@@ -4,6 +4,7 @@ import { ORDER_STATUS, PAYMENT_METHOD, PAYMENT_STATUS } from '../constants/index
 export const createOrderItemSchema = z.object({
   menuItemId: z.string().min(1, 'Menu Item ID is required'),
   quantity: z.number().int().min(1, 'Quantity must be at least 1'),
+  notes: z.string().optional(),
 });
 
 export const createOrderSchema = z.object({
@@ -27,3 +28,9 @@ export const updateOrderStatusSchema = z.object({
     ORDER_STATUS.CANCELLED,
   ]),
 });
+
+export const addOrderItemsSchema = z.object({
+  items: z.array(createOrderItemSchema).min(1, 'Order must contain at least one item to add'),
+  paymentMethod: z.enum([PAYMENT_METHOD.CASH, PAYMENT_METHOD.UPI, PAYMENT_METHOD.CARD]).optional(),
+});
+
