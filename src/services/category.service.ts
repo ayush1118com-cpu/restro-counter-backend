@@ -6,9 +6,12 @@ import { CloudinaryService } from './cloudinary.service.js';
 
 export class CategoryService {
   public static async createCategory(restaurantId: string, data: any, imageFile?: Express.Multer.File) {
-    const existing = await Category.findOne({ restaurantId, name: data.name });
+    const existing = await Category.findOne({
+      restaurantId,
+      name: { $regex: new RegExp(`^${data.name.trim()}$`, 'i') },
+    });
     if (existing) {
-      throw new AppError(`Category '${data.name}' already exists in your menu.`, 400, ERROR_CODES.DUPLICATE_RESOURCE);
+      return existing;
     }
 
     let imageData;

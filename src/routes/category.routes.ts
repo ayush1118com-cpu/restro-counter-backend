@@ -11,10 +11,10 @@ const router = Router();
 router.use(authenticate);
 router.use(requireRestaurant);
 
-router.post('/', authorize(ROLES.RESTAURANT_ADMIN), uploadSingleImage('image'), CategoryController.create);
-router.get('/', authorize(ROLES.RESTAURANT_ADMIN, ROLES.KITCHEN_STAFF), CategoryController.getAll);
-router.get('/:id', authorize(ROLES.RESTAURANT_ADMIN, ROLES.KITCHEN_STAFF), CategoryController.getById);
-router.patch('/:id', authorize(ROLES.RESTAURANT_ADMIN), uploadSingleImage('image'), CategoryController.update);
-router.delete('/:id', authorize(ROLES.RESTAURANT_ADMIN), CategoryController.delete);
+router.post('/', authorize(ROLES.RESTAURANT_ADMIN, ROLES.SUPER_ADMIN), uploadSingleImage('image'), CategoryController.create);
+router.get('/', authorize(ROLES.RESTAURANT_ADMIN, ROLES.KITCHEN_STAFF, ROLES.SUPER_ADMIN), CategoryController.getAll);
+router.get('/:id', authorize(ROLES.RESTAURANT_ADMIN, ROLES.KITCHEN_STAFF, ROLES.SUPER_ADMIN), CategoryController.getById);
+router.patch('/:id', authorize(ROLES.RESTAURANT_ADMIN, ROLES.SUPER_ADMIN), uploadSingleImage('image'), CategoryController.update);
+router.delete('/:id', authorize(ROLES.RESTAURANT_ADMIN, ROLES.SUPER_ADMIN), CategoryController.delete);
 
 export default router;

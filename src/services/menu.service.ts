@@ -1,9 +1,11 @@
+import mongoose from 'mongoose';
 import { MenuItem } from '../models/MenuItem.js';
 import { Category } from '../models/Category.js';
 import { AppError } from '../middleware/error.middleware.js';
 import { ERROR_CODES } from '../constants/index.js';
 import { ParsedPagination } from '../utils/pagination.js';
 import { CloudinaryService } from './cloudinary.service.js';
+import { logger } from '../utils/logger.js';
 
 export class MenuService {
   public static async createMenuItem(
@@ -11,20 +13,63 @@ export class MenuService {
     data: any,
     imageFile?: Express.Multer.File
   ) {
-    const category = await Category.findOne({ _id: data.categoryId, restaurantId });
-    if (!category) {
-      throw new AppError('Specified Category not found in your restaurant menu.', 404, ERROR_CODES.NOT_FOUND);
+    // Smart Category Resolution (by ObjectId, by Name, or Auto-Create)
+    let category = null;
+    if (data.categoryId && mongoose.Types.ObjectId.isValid(data.categoryId)) {
+      category = await Category.findOne({ _id: data.categoryId, restaurantId });
     }
 
-    let imageData = undefined;
+    if (!category && data.categoryId && typeof data.categoryId === 'string') {
+      category = await Category.findOne({
+        restaurantId,
+        name: { $regex: new RegExp(`^${data.categoryId.trim()}$`, 'i') },
+      });
+    }
+
+    if (!category && data.categoryName && typeof data.categoryName === 'string') {
+      category = await Category.findOne({
+        restaurantId,
+        name: { $regex: new RegExp(`^${data.categoryName.trim()}$`, 'i') },
+      });
+    }
+
+    if (!category) {
+      const catName =
+        (typeof data.categoryId === 'string' && !mongoose.Types.ObjectId.isValid(data.categoryId) && data.categoryId.trim()) ||
+        data.categoryName ||
+        'General';
+
+      category = await Category.create({
+        restaurantId,
+        name: catName,
+        description: `${catName} items`,
+        isActive: true,
+        sortOrder: 0,
+      });
+    }
+
+    data.categoryId = category._id;
+
+    let imageData: { secure_url: string; public_id?: string } | undefined = undefined;
     if (imageFile) {
-      imageData = await CloudinaryService.uploadImage(imageFile.buffer, 'restro-counter/menu');
-    } else if (data.image && data.image.startsWith('data:image')) {
-      const base64Data = data.image.replace(/^data:image\/\w+;base64,/, "");
-      const buffer = Buffer.from(base64Data, 'base64');
-      imageData = await CloudinaryService.uploadImage(buffer, 'restro-counter/menu');
-    } else if (typeof data.image === 'string' && data.image.startsWith('http')) {
-      imageData = { secure_url: data.image, public_id: '' };
+      try {
+        imageData = await CloudinaryService.uploadImage(imageFile.buffer, 'restro-counter/menu');
+      } catch (err) {
+        logger.warn('Cloudinary upload failed for file buffer, skipping upload');
+      }
+    } else if (typeof data.image === 'string' && data.image.startsWith('data:image')) {
+      try {
+        const base64Data = data.image.replace(/^data:image\/\w+;base64,/, "");
+        const buffer = Buffer.from(base64Data, 'base64');
+        imageData = await CloudinaryService.uploadImage(buffer, 'restro-counter/menu');
+      } catch (err) {
+        // Fallback: If Cloudinary fails, store the base64 data directly so user's image is retained
+        imageData = { secure_url: data.image, public_id: '' };
+      }
+    } else if (typeof data.image === 'string' && data.image.trim()) {
+      imageData = { secure_url: data.image.trim(), public_id: '' };
+    } else if (data.image && typeof data.image === 'object' && data.image.secure_url) {
+      imageData = { secure_url: data.image.secure_url, public_id: data.image.public_id || '' };
     }
 
     const menuItem = await MenuItem.create({
@@ -35,6 +80,7 @@ export class MenuService {
       price: data.price,
       discountPrice: data.discountPrice,
       image: imageData,
+      requiresKitchen: data.requiresKitchen ?? true,
       isAvailable: data.isAvailable ?? true,
       isActive: true,
     });
@@ -103,32 +149,60 @@ export class MenuService {
     }
 
     if (data.categoryId) {
-      const category = await Category.findOne({ _id: data.categoryId, restaurantId });
-      if (!category) {
-        throw new AppError('Target category not found in your restaurant.', 404, ERROR_CODES.NOT_FOUND);
+      let category = null;
+      if (mongoose.Types.ObjectId.isValid(data.categoryId)) {
+        category = await Category.findOne({ _id: data.categoryId, restaurantId });
       }
-      menuItem.categoryId = data.categoryId;
+
+      if (!category && typeof data.categoryId === 'string') {
+        category = await Category.findOne({
+          restaurantId,
+          name: { $regex: new RegExp(`^${data.categoryId.trim()}$`, 'i') },
+        });
+      }
+
+      if (!category) {
+        category = await Category.create({
+          restaurantId,
+          name: data.categoryId,
+          description: `${data.categoryId} items`,
+          isActive: true,
+          sortOrder: 0,
+        });
+      }
+
+      menuItem.categoryId = category._id;
     }
 
     if (imageFile) {
       if (menuItem.image?.public_id) {
-        await CloudinaryService.deleteImage(menuItem.image.public_id);
+        await CloudinaryService.deleteImage(menuItem.image.public_id).catch(() => {});
       }
-      const imageData = await CloudinaryService.uploadImage(imageFile.buffer, 'restro-counter/menu');
-      menuItem.image = imageData;
-    } else if (data.image && data.image.startsWith('data:image')) {
+      try {
+        const imageData = await CloudinaryService.uploadImage(imageFile.buffer, 'restro-counter/menu');
+        menuItem.image = imageData;
+      } catch (err) {
+        logger.warn('Cloudinary upload failed on update');
+      }
+    } else if (typeof data.image === 'string' && data.image.startsWith('data:image')) {
       if (menuItem.image?.public_id) {
-        await CloudinaryService.deleteImage(menuItem.image.public_id);
+        await CloudinaryService.deleteImage(menuItem.image.public_id).catch(() => {});
       }
-      const base64Data = data.image.replace(/^data:image\/\w+;base64,/, "");
-      const buffer = Buffer.from(base64Data, 'base64');
-      const uploadResult = await CloudinaryService.uploadImage(buffer, 'restro-counter/menu');
-      menuItem.image = uploadResult;
-    } else if (typeof data.image === 'string' && data.image.startsWith('http')) {
-      menuItem.image = { secure_url: data.image, public_id: '' };
+      try {
+        const base64Data = data.image.replace(/^data:image\/\w+;base64,/, "");
+        const buffer = Buffer.from(base64Data, 'base64');
+        const uploadResult = await CloudinaryService.uploadImage(buffer, 'restro-counter/menu');
+        menuItem.image = uploadResult;
+      } catch (err) {
+        menuItem.image = { secure_url: data.image, public_id: '' };
+      }
+    } else if (typeof data.image === 'string' && data.image.trim()) {
+      menuItem.image = { secure_url: data.image.trim(), public_id: '' };
+    } else if (data.image && typeof data.image === 'object' && data.image.secure_url) {
+      menuItem.image = { secure_url: data.image.secure_url, public_id: data.image.public_id || '' };
     } else if (data.image === '') {
       if (menuItem.image?.public_id) {
-        await CloudinaryService.deleteImage(menuItem.image.public_id);
+        await CloudinaryService.deleteImage(menuItem.image.public_id).catch(() => {});
       }
       menuItem.image = undefined;
     }
