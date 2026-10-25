@@ -23,6 +23,8 @@ export const updateRestaurantSchema = z.object({
   gstRate: z.union([z.number(), z.string().regex(/^\d+(\.\d+)?$/).transform(Number)]).optional(),
   receiptHeader: z.string().optional(),
   receiptFooter: z.string().optional(),
+  tableQrEnabled: z.boolean().optional(),
+  hasTableQrOrdering: z.boolean().optional(),
 });
 
 export const updateRestaurantStatusSchema = z.object({

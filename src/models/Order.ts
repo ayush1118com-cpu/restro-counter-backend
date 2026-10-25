@@ -9,7 +9,7 @@ import {
 } from '../constants/index.js';
 
 export interface IOrderItem {
-  menuItemId: mongoose.Types.ObjectId;
+  menuItemId?: any;
   name: string;
   quantity: number;
   price: number;
@@ -29,10 +29,13 @@ export interface IOrder extends Document {
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
   orderStatus: OrderStatus;
+  orderType?: 'COUNTER' | 'TABLE_QR';
+  tableNumber?: string;
+  notes?: string;
   customerName?: string;
   customerPhone?: string;
   vehicleNumber?: string;
-  createdBy: mongoose.Types.ObjectId;
+  createdBy?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -40,9 +43,8 @@ export interface IOrder extends Document {
 const OrderItemSchema = new Schema<IOrderItem>(
   {
     menuItemId: {
-      type: Schema.Types.ObjectId,
-      ref: 'MenuItem',
-      required: true,
+      type: Schema.Types.Mixed,
+      required: false,
     },
     name: {
       type: String,
@@ -138,10 +140,23 @@ const OrderSchema = new Schema<IOrder>(
       type: String,
       trim: true,
     },
+    orderType: {
+      type: String,
+      enum: ['COUNTER', 'TABLE_QR'],
+      default: 'COUNTER',
+    },
+    tableNumber: {
+      type: String,
+      trim: true,
+    },
+    notes: {
+      type: String,
+      trim: true,
+    },
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
+      required: false,
     },
   },
   { timestamps: true }

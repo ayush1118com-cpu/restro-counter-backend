@@ -16,11 +16,28 @@ export class DashboardService {
 
     const todayOrders = await Order.countDocuments({ createdAt: { $gte: startOfDay } });
 
-    const todayPayments = await Payment.aggregate([
-      { $match: { paidAt: { $gte: startOfDay }, status: PAYMENT_STATUS.PAID } },
-      { $group: { _id: null, total: { $sum: '$amount' } } },
+    const todayRevenueAgg = await Order.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startOfDay },
+          orderStatus: { $ne: ORDER_STATUS.CANCELLED },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$grandTotal' },
+        },
+      },
     ]);
-    const todayRevenue = todayPayments[0]?.total || 0;
+    const todayRevenue = todayRevenueAgg[0]?.total || 0;
+
+    const totalOrdersAllTime = await Order.countDocuments();
+    const totalRevenueAllTimeAgg = await Order.aggregate([
+      { $match: { orderStatus: { $ne: ORDER_STATUS.CANCELLED } } },
+      { $group: { _id: null, total: { $sum: '$grandTotal' } } },
+    ]);
+    const totalRevenueAllTime = totalRevenueAllTimeAgg[0]?.total || 0;
 
     const newLeads = await Lead.countDocuments({ createdAt: { $gte: startOfDay } });
 
@@ -31,6 +48,8 @@ export class DashboardService {
       blockedRestaurants,
       todayOrders,
       todayRevenue,
+      totalOrdersAllTime,
+      totalRevenueAllTime,
       newLeads,
     };
   }
@@ -39,30 +58,34 @@ export class DashboardService {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
-    const queryToday = { restaurantId, createdAt: { $gte: startOfDay } };
+    const rObjectId = (Restaurant as any).base.Types.ObjectId.isValid(restaurantId)
+      ? (Restaurant as any).base.Types.ObjectId.createFromHexString(restaurantId)
+      : restaurantId;
+
+    const queryToday = { restaurantId: rObjectId, createdAt: { $gte: startOfDay } };
 
     const todayOrders = await Order.countDocuments(queryToday);
 
-    const salesAgg = await Payment.aggregate([
+    const salesAgg = await Order.aggregate([
       {
         $match: {
-          restaurantId: (Restaurant as any).base.Types.ObjectId.createFromHexString(restaurantId),
-          paidAt: { $gte: startOfDay },
-          status: PAYMENT_STATUS.PAID,
+          restaurantId: rObjectId,
+          createdAt: { $gte: startOfDay },
+          orderStatus: { $ne: ORDER_STATUS.CANCELLED },
         },
       },
       {
         $group: {
           _id: null,
-          totalSales: { $sum: '$amount' },
+          totalSales: { $sum: '$grandTotal' },
           cashTotal: {
-            $sum: { $cond: [{ $eq: ['$method', PAYMENT_METHOD.CASH] }, '$amount', 0] },
+            $sum: { $cond: [{ $eq: ['$paymentMethod', PAYMENT_METHOD.CASH] }, '$grandTotal', 0] },
           },
           upiTotal: {
-            $sum: { $cond: [{ $eq: ['$method', PAYMENT_METHOD.UPI] }, '$amount', 0] },
+            $sum: { $cond: [{ $eq: ['$paymentMethod', PAYMENT_METHOD.UPI] }, '$grandTotal', 0] },
           },
           cardTotal: {
-            $sum: { $cond: [{ $eq: ['$method', PAYMENT_METHOD.CARD] }, '$amount', 0] },
+            $sum: { $cond: [{ $eq: ['$paymentMethod', PAYMENT_METHOD.CARD] }, '$grandTotal', 0] },
           },
         },
       },
@@ -71,12 +94,12 @@ export class DashboardService {
     const salesData = salesAgg[0] || { totalSales: 0, cashTotal: 0, upiTotal: 0, cardTotal: 0 };
 
     const pendingOrders = await Order.countDocuments({
-      restaurantId,
+      restaurantId: rObjectId,
       orderStatus: { $in: [ORDER_STATUS.NEW, ORDER_STATUS.ACCEPTED, ORDER_STATUS.PREPARING, ORDER_STATUS.READY] },
     });
 
     const completedOrders = await Order.countDocuments({
-      restaurantId,
+      restaurantId: rObjectId,
       orderStatus: ORDER_STATUS.COMPLETED,
       createdAt: { $gte: startOfDay },
     });

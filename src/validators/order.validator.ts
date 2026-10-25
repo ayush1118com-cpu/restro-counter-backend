@@ -2,8 +2,11 @@ import { z } from 'zod';
 import { ORDER_STATUS, PAYMENT_METHOD, PAYMENT_STATUS } from '../constants/index.js';
 
 export const createOrderItemSchema = z.object({
-  menuItemId: z.string().min(1, 'Menu Item ID is required'),
+  menuItemId: z.string().optional(),
+  name: z.string().optional(),
+  price: z.number().optional(),
   quantity: z.number().int().min(1, 'Quantity must be at least 1'),
+  requiresKitchen: z.boolean().optional(),
   notes: z.string().optional(),
 });
 
@@ -17,6 +20,27 @@ export const createOrderSchema = z.object({
   customerName: z.string().optional(),
   customerPhone: z.string().optional(),
   vehicleNumber: z.string().optional(),
+  orderType: z.enum(['COUNTER', 'TABLE_QR']).optional(),
+  tableNumber: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export const createPublicTableOrderSchema = z.object({
+  restaurantId: z.string().min(1, 'Restaurant ID is required'),
+  tableNumber: z.string().min(1, 'Table Number is required'),
+  customerName: z.string().optional(),
+  customerPhone: z.string().optional(),
+  notes: z.string().optional(),
+  items: z.array(
+    z.object({
+      menuItemId: z.string().optional(),
+      name: z.string().min(1, 'Item name is required'),
+      price: z.number().min(0),
+      quantity: z.number().int().min(1),
+      requiresKitchen: z.boolean().optional(),
+      notes: z.string().optional(),
+    })
+  ).min(1, 'Order must contain at least one item'),
 });
 
 export const updateOrderStatusSchema = z.object({

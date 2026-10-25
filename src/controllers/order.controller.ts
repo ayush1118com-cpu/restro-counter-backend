@@ -1,11 +1,42 @@
-import { Response, NextFunction } from 'express';
+import { Response, NextFunction, Request } from 'express';
 import { OrderService } from '../services/order.service.js';
-import { createOrderSchema, updateOrderStatusSchema, addOrderItemsSchema } from '../validators/order.validator.js';
+import { createOrderSchema, updateOrderStatusSchema, addOrderItemsSchema, createPublicTableOrderSchema } from '../validators/order.validator.js';
 import { sendSuccess, sendPaginated } from '../utils/response.js';
 import { parsePagination } from '../utils/pagination.js';
 import { AuthRequest } from '../types/index.js';
 
 export class OrderController {
+  public static async createTableOrder(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const validatedData = createPublicTableOrderSchema.parse(req.body);
+      const order = await OrderService.createPublicTableOrder(validatedData.restaurantId, validatedData);
+      sendSuccess(res, 'Table order placed successfully', order, 201);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  public static async getActiveTableOrder(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const restaurantId = req.query.restaurantId as string;
+      const tableNumber = req.query.tableNumber as string;
+      const activeOrder = await OrderService.getActiveTableOrder(restaurantId, tableNumber);
+      sendSuccess(res, 'Active table order retrieved', activeOrder);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  public static async getPublicTrack(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const id = req.params.id as string;
+      const order = await OrderService.getPublicTrack(id);
+      sendSuccess(res, 'Order tracking details retrieved', order);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   public static async create(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const validatedData = createOrderSchema.parse(req.body);
@@ -27,7 +58,11 @@ export class OrderController {
         endDate: req.query.endDate as string,
       };
 
-      const result = await OrderService.getOrders(req.user!.restaurantId!, pagination, filters);
+      const isSuperAdmin = req.user?.role === 'SUPER_ADMIN';
+      const explicitRestId = (req.headers['x-restaurant-id'] as string) || (req.query.restaurantId as string);
+      const targetRestId: string | undefined = isSuperAdmin && !explicitRestId ? undefined : (explicitRestId || req.user?.restaurantId || undefined);
+
+      const result = await OrderService.getOrders(targetRestId, pagination, filters);
       sendPaginated(res, 'Orders retrieved successfully', result.data, result.pagination);
     } catch (error) {
       next(error);
@@ -76,7 +111,7 @@ export class OrderController {
       const order = await OrderService.addItemsToOrder(
         req.user!.restaurantId!,
         id,
-        validatedData.items,
+        validatedData.items as any,
         validatedData.paymentMethod
       );
       sendSuccess(res, 'Items added to order successfully', order);

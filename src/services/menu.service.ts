@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { MenuItem } from '../models/MenuItem.js';
 import { Category } from '../models/Category.js';
+import { Restaurant } from '../models/Restaurant.js';
 import { AppError } from '../middleware/error.middleware.js';
 import { ERROR_CODES } from '../constants/index.js';
 import { ParsedPagination } from '../utils/pagination.js';
@@ -241,6 +242,46 @@ export class MenuService {
 
     await menuItem.deleteOne();
     return true;
+  }
+
+  public static async getPublicMenu(restaurantId: string) {
+    if (!mongoose.Types.ObjectId.isValid(restaurantId)) {
+      throw new AppError('Invalid restaurant ID', 400, ERROR_CODES.BAD_REQUEST);
+    }
+    const restaurant = await Restaurant.findById(restaurantId).lean();
+    const categories = await Category.find({ restaurantId, isActive: true }).sort({ sortOrder: 1 }).lean();
+    const items = await MenuItem.find({ restaurantId, isActive: true, isAvailable: true }).populate('categoryId', 'name').lean();
+    return {
+      restaurant: restaurant
+        ? {
+            id: restaurant._id,
+            name: restaurant.name,
+            address: restaurant.address,
+            city: restaurant.city,
+            phone: restaurant.phone,
+            gstRate: restaurant.gstRate,
+            tableQrEnabled: restaurant.tableQrEnabled !== false,
+            hasTableQrOrdering: restaurant.tableQrEnabled !== false,
+          }
+        : null,
+      categories: categories.map((c) => ({
+        id: c._id,
+        name: c.name,
+        description: c.description || '',
+      })),
+      items: items.map((i) => ({
+        id: i._id,
+        name: i.name,
+        description: i.description || '',
+        price: i.price,
+        discountPrice: i.discountPrice,
+        image: i.image?.secure_url || '',
+        categoryId: (typeof i.categoryId === 'object' && (i.categoryId as any)?._id) ? (i.categoryId as any)._id : i.categoryId,
+        categoryName: (typeof i.categoryId === 'object' && (i.categoryId as any)?.name) ? (i.categoryId as any).name : 'General',
+        requiresKitchen: i.requiresKitchen !== false,
+        isAvailable: i.isAvailable !== false,
+      })),
+    };
   }
 }
 

@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { Restaurant } from '../models/Restaurant.js';
 import { User } from '../models/User.js';
 import { Counter } from '../models/Counter.js';
@@ -68,6 +69,53 @@ export class RestaurantService {
       isActive: true,
     });
 
+    // Auto-seed starter menu items & categories for newly created outlet
+    try {
+      const templateCategories = await Category.find({ name: { $ne: 'All' } }).limit(25).lean();
+      const uniqueCatNames = Array.from(new Set(templateCategories.map((c) => c.name)));
+      const catMap = new Map<string, mongoose.Types.ObjectId>();
+
+      for (let i = 0; i < uniqueCatNames.length; i++) {
+        const catName = uniqueCatNames[i];
+        const newCat = await Category.create({
+          restaurantId: restaurant._id,
+          name: catName,
+          description: `${catName} items`,
+          sortOrder: i,
+          isActive: true,
+        });
+        catMap.set(catName, newCat._id as mongoose.Types.ObjectId);
+      }
+
+      // Clone sample menu items
+      const templateItems = await MenuItem.find({ isActive: true }).limit(84).populate('categoryId', 'name').lean();
+      const seenItemNames = new Set<string>();
+
+      for (const item of templateItems) {
+        if (seenItemNames.has(item.name)) continue;
+        seenItemNames.add(item.name);
+        const catName = (typeof item.categoryId === 'object' && (item.categoryId as any)?.name) ? (item.categoryId as any).name : 'General';
+        const assignedCatId = catMap.get(catName) || Array.from(catMap.values())[0];
+
+        if (assignedCatId) {
+          await MenuItem.create({
+            restaurantId: restaurant._id,
+            categoryId: assignedCatId,
+            name: item.name,
+            description: item.description || '',
+            price: item.price || 50,
+            discountPrice: item.discountPrice,
+            requiresKitchen: item.requiresKitchen !== false,
+            isAvailable: true,
+            isActive: true,
+            image: item.image,
+          });
+        }
+      }
+    } catch (menuSeedErr) {
+      console.error('Auto-seed starter menu error:', menuSeedErr);
+    }
+
     // Send Onboarding Credentials Email via Brevo asynchronously (non-blocking)
     EmailService.sendRestaurantOnboardingEmail({
       toEmail: email || adminEmail,
@@ -120,8 +168,42 @@ export class RestaurantService {
       .skip(pagination.skip)
       .limit(pagination.limit);
 
+    // Aggregate real-time metrics (ordersCount & salesTotal) for restaurants
+    const restIds = restaurants.map((r) => r._id);
+    const orderAgg = await Order.aggregate([
+      { $match: { restaurantId: { $in: restIds } } },
+      {
+        $group: {
+          _id: '$restaurantId',
+          totalOrders: { $sum: 1 },
+          totalRevenue: {
+            $sum: { $cond: [{ $ne: ['$orderStatus', 'CANCELLED'] }, '$grandTotal', 0] },
+          },
+        },
+      },
+    ]);
+
+    const metricsMap = new Map<string, { totalOrders: number; totalRevenue: number }>();
+    orderAgg.forEach((m) => {
+      metricsMap.set(String(m._id), {
+        totalOrders: m.totalOrders || 0,
+        totalRevenue: m.totalRevenue || 0,
+      });
+    });
+
+    const enrichedData = restaurants.map((r) => {
+      const m = metricsMap.get(String(r._id)) || { totalOrders: 0, totalRevenue: 0 };
+      const obj = r.toObject();
+      return {
+        ...obj,
+        metrics: m,
+        ordersCount: m.totalOrders,
+        salesTotal: m.totalRevenue,
+      };
+    });
+
     return {
-      data: restaurants,
+      data: enrichedData,
       pagination: {
         page: pagination.page,
         limit: pagination.limit,
@@ -164,6 +246,8 @@ export class RestaurantService {
     if (data.gstRate !== undefined) restaurant.gstRate = Number(data.gstRate);
     if (data.receiptHeader !== undefined) restaurant.receiptHeader = data.receiptHeader;
     if (data.receiptFooter !== undefined) restaurant.receiptFooter = data.receiptFooter;
+    if (data.tableQrEnabled !== undefined) restaurant.tableQrEnabled = Boolean(data.tableQrEnabled);
+    if (data.hasTableQrOrdering !== undefined) restaurant.tableQrEnabled = Boolean(data.hasTableQrOrdering);
 
     await restaurant.save();
 

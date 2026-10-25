@@ -11,6 +11,7 @@ import {
   ERROR_CODES,
   ORDER_STATUS,
   OrderStatus,
+  PAYMENT_METHOD,
   PAYMENT_STATUS,
   SOCKET_EVENTS,
 } from '../constants/index.js';
@@ -18,49 +19,57 @@ import { ParsedPagination } from '../utils/pagination.js';
 
 export class OrderService {
   public static async createOrder(user: any, data: any) {
-    const restaurantId = user.restaurantId;
+    const restaurantId = user?.restaurantId || data.restaurantId;
     if (!restaurantId) {
       throw new AppError('Authenticated user is not assigned to a restaurant.', 400, ERROR_CODES.BAD_REQUEST);
     }
 
-    const { items: requestItems, paymentMethod, discount = 0, tax = 0, confirmPayment = true, transactionReference, customerName, customerPhone, vehicleNumber } = data;
+    const {
+      items: requestItems,
+      paymentMethod,
+      discount = 0,
+      tax = 0,
+      confirmPayment = true,
+      transactionReference,
+      customerName,
+      customerPhone,
+      vehicleNumber,
+      orderType = 'COUNTER',
+      tableNumber,
+      notes,
+    } = data;
 
-    const menuItemIds = requestItems.map((item: any) => item.menuItemId);
-    const dbMenuItems = await MenuItem.find({
-      _id: { $in: menuItemIds },
-      restaurantId,
-    });
+    // Resolve Menu Items (by ObjectId or name or direct payload)
+    const validObjectIds = requestItems
+      .map((it: any) => it.menuItemId)
+      .filter((id: any) => id && mongoose.Types.ObjectId.isValid(id));
 
-    if (dbMenuItems.length !== menuItemIds.length) {
-      throw new AppError(
-        'One or more ordered menu items were not found or do not belong to your restaurant.',
-        400,
-        ERROR_CODES.BAD_REQUEST
-      );
-    }
+    const dbMenuItems = validObjectIds.length > 0
+      ? await MenuItem.find({ _id: { $in: validObjectIds }, restaurantId })
+      : [];
 
     const dbMenuMap = new Map<string, any>();
     for (const item of dbMenuItems) {
-      if (!item.isActive || !item.isAvailable) {
-        throw new AppError(
-          `Item '${item.name}' is currently unavailable for order.`,
-          400,
-          ERROR_CODES.BAD_REQUEST
-        );
-      }
       dbMenuMap.set((item._id as any).toString(), item);
     }
 
     const calculatedItems: IOrderItem[] = [];
     let subtotal = 0;
-
     let requiresKitchenAny = false;
 
     for (const reqItem of requestItems) {
-      const dbItem = dbMenuMap.get(reqItem.menuItemId);
-      const unitPrice = dbItem.discountPrice && dbItem.discountPrice > 0 ? dbItem.discountPrice : dbItem.price;
-      const itemTotal = unitPrice * reqItem.quantity;
-      const requiresKitchen = dbItem.requiresKitchen !== false;
+      let dbItem = reqItem.menuItemId ? dbMenuMap.get(reqItem.menuItemId.toString()) : null;
+      if (!dbItem && reqItem.name) {
+        dbItem = await MenuItem.findOne({ restaurantId, name: reqItem.name });
+      }
+
+      const unitPrice = dbItem
+        ? (dbItem.discountPrice && dbItem.discountPrice > 0 ? dbItem.discountPrice : dbItem.price)
+        : (Number(reqItem.price) || 0);
+
+      const quantity = Number(reqItem.quantity) || 1;
+      const itemTotal = unitPrice * quantity;
+      const requiresKitchen = dbItem ? (dbItem.requiresKitchen !== false) : (reqItem.requiresKitchen !== false);
 
       if (requiresKitchen) {
         requiresKitchenAny = true;
@@ -68,9 +77,9 @@ export class OrderService {
 
       subtotal += itemTotal;
       calculatedItems.push({
-        menuItemId: dbItem._id,
-        name: dbItem.name,
-        quantity: reqItem.quantity,
+        menuItemId: dbItem ? dbItem._id : (mongoose.Types.ObjectId.isValid(reqItem.menuItemId) ? reqItem.menuItemId : undefined),
+        name: dbItem ? dbItem.name : (reqItem.name || 'Menu Item'),
+        quantity,
         price: unitPrice,
         total: itemTotal,
         requiresKitchen,
@@ -86,8 +95,9 @@ export class OrderService {
     const orderNumber = await getNextOrderNumber(restaurantId);
 
     const initialPaymentStatus = confirmPayment ? PAYMENT_STATUS.PAID : PAYMENT_STATUS.PENDING;
-    // If none of the items require kitchen preparation (e.g. Chai, Cigarette), auto-complete order!
-    const initialOrderStatus = requiresKitchenAny ? ORDER_STATUS.NEW : ORDER_STATUS.COMPLETED;
+    const initialOrderStatus = (orderType === 'TABLE_QR')
+      ? ORDER_STATUS.NEW
+      : (requiresKitchenAny ? ORDER_STATUS.NEW : ORDER_STATUS.COMPLETED);
 
     const order = await Order.create({
       restaurantId,
@@ -97,13 +107,16 @@ export class OrderService {
       discount: finalDiscount,
       tax: finalTax,
       grandTotal,
-      paymentMethod,
+      paymentMethod: paymentMethod || PAYMENT_METHOD.CASH,
       paymentStatus: initialPaymentStatus,
       orderStatus: initialOrderStatus,
+      orderType,
+      tableNumber,
+      notes,
       customerName,
       customerPhone,
       vehicleNumber,
-      createdBy: user._id,
+      createdBy: user?._id || undefined,
     });
 
     if (confirmPayment) {
@@ -111,7 +124,7 @@ export class OrderService {
         restaurantId,
         orderId: order._id,
         amount: grandTotal,
-        method: paymentMethod,
+        method: paymentMethod || PAYMENT_METHOD.CASH,
         status: PAYMENT_STATUS.PAID,
         transactionReference,
         paidAt: new Date(),
@@ -122,13 +135,208 @@ export class OrderService {
       .populate('createdBy', 'name email')
       .lean();
 
-    SocketEventService.emitNewOrder(restaurantId, populatedOrder);
+    SocketEventService.emitNewOrder(restaurantId.toString(), populatedOrder);
 
     return populatedOrder;
   }
 
+  public static async createPublicTableOrder(restaurantId: string, data: any): Promise<any> {
+    const restaurant = await Restaurant.findById(restaurantId);
+    if (!restaurant) {
+      throw new AppError('Restaurant not found.', 404, ERROR_CODES.NOT_FOUND);
+    }
+    if (restaurant.status !== 'ACTIVE') {
+      throw new AppError('Restaurant is currently inactive.', 400, ERROR_CODES.BAD_REQUEST);
+    }
+    if (restaurant.tableQrEnabled === false) {
+      throw new AppError('Table QR ordering is currently disabled for this restaurant.', 403, ERROR_CODES.FORBIDDEN);
+    }
+
+    const gstRate = restaurant.gstRate !== undefined ? Number(restaurant.gstRate) : 5;
+    const items = data.items || [];
+    let subtotal = 0;
+    let requiresKitchenAny = false;
+
+    const calculatedItems: IOrderItem[] = [];
+    for (const item of items) {
+      const price = Number(item.price) || 0;
+      const quantity = Number(item.quantity) || 1;
+      const total = price * quantity;
+      const requiresKitchen = item.requiresKitchen !== false;
+      if (requiresKitchen) requiresKitchenAny = true;
+
+      subtotal += total;
+      calculatedItems.push({
+        menuItemId: item.menuItemId || undefined,
+        name: item.name,
+        price,
+        quantity,
+        total,
+        requiresKitchen,
+        notes: item.notes,
+      });
+    }
+
+    // Check if there is an active running order for this table
+    const activeOrder = !data.forceNewOrder
+      ? await Order.findOne({
+          restaurantId,
+          tableNumber: { $regex: new RegExp(`^${data.tableNumber.trim()}$`, 'i') },
+          orderStatus: { $in: [ORDER_STATUS.NEW, ORDER_STATUS.ACCEPTED, ORDER_STATUS.PREPARING, ORDER_STATUS.READY] },
+        })
+      : null;
+
+    if (activeOrder) {
+      // Append / merge items into existing active table order (Single Consolidated Bill)
+      for (const newItem of calculatedItems) {
+        const existingItemIndex = activeOrder.items.findIndex(
+          (i) => i.name.toLowerCase() === newItem.name.toLowerCase() && (i.notes || '') === (newItem.notes || '')
+        );
+        if (existingItemIndex > -1) {
+          activeOrder.items[existingItemIndex].quantity += newItem.quantity;
+          activeOrder.items[existingItemIndex].total += newItem.total;
+        } else {
+          activeOrder.items.push(newItem);
+        }
+      }
+
+      // Recalculate totals
+      const newSubtotal = activeOrder.items.reduce((sum, it) => sum + it.total, 0);
+      const newTax = Math.round(newSubtotal * (gstRate / 100));
+      const newGrandTotal = newSubtotal + newTax - (activeOrder.discount || 0);
+
+      activeOrder.subtotal = newSubtotal;
+      activeOrder.tax = newTax;
+      activeOrder.grandTotal = newGrandTotal;
+
+      if (data.notes) {
+        activeOrder.notes = activeOrder.notes ? `${activeOrder.notes} | ${data.notes}` : data.notes;
+      }
+      if (data.customerName && (!activeOrder.customerName || activeOrder.customerName.includes('Guest'))) {
+        activeOrder.customerName = data.customerName;
+      }
+      if (data.customerPhone && !activeOrder.customerPhone) {
+        activeOrder.customerPhone = data.customerPhone;
+      }
+
+      // Set orderStatus to PREPARING if it was READY or ACCEPTED so chef prepares the extra items
+      if (activeOrder.orderStatus === ORDER_STATUS.READY || activeOrder.orderStatus === ORDER_STATUS.ACCEPTED) {
+        activeOrder.orderStatus = ORDER_STATUS.PREPARING;
+      }
+
+      await activeOrder.save();
+
+      const populatedUpdated = await Order.findById(activeOrder._id).lean();
+
+      SocketEventService.emitOrderStatusChange(restaurantId.toString(), SOCKET_EVENTS.ORDER_PREPARING, populatedUpdated);
+      SocketEventService.emitNewOrder(restaurantId.toString(), {
+        ...populatedUpdated,
+        isAppended: true,
+        newItems: calculatedItems,
+      });
+
+      return {
+        ...populatedUpdated,
+        isAppended: true,
+      };
+    }
+
+    const tax = Math.round(subtotal * (gstRate / 100));
+    const grandTotal = subtotal + tax;
+    const orderNumber = await getNextOrderNumber(restaurantId);
+
+    const order = await Order.create({
+      restaurantId,
+      orderNumber,
+      items: calculatedItems,
+      subtotal,
+      tax,
+      discount: 0,
+      grandTotal,
+      paymentMethod: PAYMENT_METHOD.CASH,
+      paymentStatus: PAYMENT_STATUS.PENDING,
+      orderStatus: ORDER_STATUS.NEW,
+      orderType: 'TABLE_QR',
+      tableNumber: data.tableNumber,
+      notes: data.notes,
+      customerName: data.customerName || `${data.tableNumber} Guest`,
+      customerPhone: data.customerPhone,
+    });
+
+    const populatedOrder = await Order.findById(order._id).lean();
+
+    SocketEventService.emitNewOrder(restaurantId.toString(), populatedOrder);
+
+    return populatedOrder;
+  }
+
+  public static async getActiveTableOrder(restaurantId: string, tableNumber: string) {
+    if (!restaurantId || !tableNumber) return null;
+    const order = await Order.findOne({
+      restaurantId,
+      tableNumber: { $regex: new RegExp(`^${tableNumber.trim()}$`, 'i') },
+      orderStatus: { $in: [ORDER_STATUS.NEW, ORDER_STATUS.ACCEPTED, ORDER_STATUS.PREPARING, ORDER_STATUS.READY] },
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    if (!order) return null;
+
+    return {
+      id: order._id,
+      orderNumber: order.orderNumber,
+      restaurantId: order.restaurantId,
+      status: order.orderStatus,
+      paymentStatus: order.paymentStatus,
+      paymentMethod: order.paymentMethod,
+      orderType: order.orderType,
+      tableNumber: order.tableNumber,
+      customerName: order.customerName,
+      customerPhone: order.customerPhone,
+      items: order.items,
+      subtotal: order.subtotal,
+      tax: order.tax,
+      total: order.grandTotal,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+    };
+  }
+
+  public static async getPublicTrack(orderIdOrNumber: string) {
+    let order = null;
+    if (mongoose.Types.ObjectId.isValid(orderIdOrNumber)) {
+      order = await Order.findById(orderIdOrNumber).lean();
+    }
+    if (!order) {
+      const num = parseInt(orderIdOrNumber, 10);
+      if (!isNaN(num)) {
+        order = await Order.findOne({ orderNumber: num }).sort({ createdAt: -1 }).lean();
+      }
+    }
+    if (!order) {
+      throw new AppError('Order not found', 404, ERROR_CODES.NOT_FOUND);
+    }
+    return {
+      id: order._id,
+      orderNumber: order.orderNumber,
+      restaurantId: order.restaurantId,
+      status: order.orderStatus,
+      paymentStatus: order.paymentStatus,
+      paymentMethod: order.paymentMethod,
+      orderType: order.orderType,
+      tableNumber: order.tableNumber,
+      customerName: order.customerName,
+      items: order.items,
+      subtotal: order.subtotal,
+      tax: order.tax,
+      total: order.grandTotal,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+    };
+  }
+
   public static async getOrders(
-    restaurantId: string,
+    restaurantId: string | undefined,
     pagination: ParsedPagination,
     filters: {
       status?: string;
@@ -138,7 +346,10 @@ export class OrderService {
       endDate?: string;
     }
   ) {
-    const query: any = { restaurantId };
+    const query: any = {};
+    if (restaurantId) {
+      query.restaurantId = restaurantId;
+    }
 
     if (filters.status && Object.values(ORDER_STATUS).includes(filters.status as any)) {
       query.orderStatus = filters.status;
@@ -172,6 +383,7 @@ export class OrderService {
     const total = await Order.countDocuments(query);
     const orders = await Order.find(query)
       .populate('createdBy', 'name')
+      .populate('restaurantId', 'name city ownerName phone')
       .sort({ [pagination.sortBy]: pagination.sortOrder })
       .skip(pagination.skip)
       .limit(pagination.limit);

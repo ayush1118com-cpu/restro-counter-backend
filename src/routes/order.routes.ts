@@ -7,6 +7,11 @@ import { ROLES } from '../constants/index.js';
 
 const router = Router();
 
+// Public Table QR Order Placement & Tracking (No login required for dining customers)
+router.post('/public-table', OrderController.createTableOrder);
+router.get('/public-table/active', OrderController.getActiveTableOrder);
+router.get('/public-track/:id', OrderController.getPublicTrack);
+
 router.use(authenticate);
 router.use(requireRestaurant);
 

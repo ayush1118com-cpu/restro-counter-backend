@@ -19,6 +19,7 @@ export interface IRestaurant extends Document {
   receiptFooter?: string;
   logo?: IRestaurantImage;
   status: RestaurantStatus;
+  tableQrEnabled?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -76,6 +77,10 @@ const RestaurantSchema = new Schema<IRestaurant>(
     logo: {
       secure_url: { type: String },
       public_id: { type: String },
+    },
+    tableQrEnabled: {
+      type: Boolean,
+      default: true,
     },
     status: {
       type: String,

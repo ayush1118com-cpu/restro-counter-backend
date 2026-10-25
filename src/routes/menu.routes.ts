@@ -8,6 +8,9 @@ import { ROLES } from '../constants/index.js';
 
 const router = Router();
 
+// Public Menu Endpoint for Table QR Scanning
+router.get('/public/:restaurantId', MenuController.getPublicMenu);
+
 router.use(authenticate);
 router.use(requireRestaurant);
 

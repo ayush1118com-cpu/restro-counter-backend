@@ -1,4 +1,4 @@
-import { Response, NextFunction } from 'express';
+import { Response, NextFunction, Request } from 'express';
 import { MenuService } from '../services/menu.service.js';
 import {
   createMenuItemSchema,
@@ -10,6 +10,15 @@ import { parsePagination } from '../utils/pagination.js';
 import { AuthRequest } from '../types/index.js';
 
 export class MenuController {
+  public static async getPublicMenu(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const restaurantId = req.params.restaurantId as string;
+      const data = await MenuService.getPublicMenu(restaurantId);
+      sendSuccess(res, 'Public menu retrieved successfully', data);
+    } catch (error) {
+      next(error);
+    }
+  }
   public static async create(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const validatedData = createMenuItemSchema.parse(req.body);
@@ -23,6 +32,9 @@ export class MenuController {
   public static async getAll(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const pagination = parsePagination(req);
+      if (!req.query.limit) {
+        pagination.limit = 500;
+      }
       const categoryId = req.query.categoryId as string;
       const isAvailable = req.query.isAvailable ? req.query.isAvailable === 'true' : undefined;
 

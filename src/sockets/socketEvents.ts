@@ -18,6 +18,10 @@ export class SocketEventService {
       type: 'NEW_ORDER',
       order,
     });
+    SocketEventService.io.to('super-admin').emit(SOCKET_EVENTS.NEW_ORDER, {
+      type: 'NEW_ORDER',
+      order,
+    });
   }
 
   public static emitOrderStatusChange(
@@ -27,9 +31,13 @@ export class SocketEventService {
   ): void {
     if (!SocketEventService.io) return;
     const room = `restaurant:${restaurantId}`;
-    logger.info(`Emitting '${event}' to room '${room}' for Order #${order.orderNumber}`);
+    logger.info(`Emitting '${event}' to room '${room}' and 'super-admin' for Order #${order.orderNumber}`);
 
     SocketEventService.io.to(room).emit(event, {
+      type: event.toUpperCase().replace('-', '_'),
+      order,
+    });
+    SocketEventService.io.to('super-admin').emit(event, {
       type: event.toUpperCase().replace('-', '_'),
       order,
     });
@@ -38,9 +46,13 @@ export class SocketEventService {
   public static emitPaymentUpdate(restaurantId: string, payment: any): void {
     if (!SocketEventService.io) return;
     const room = `restaurant:${restaurantId}`;
-    logger.info(`Emitting '${SOCKET_EVENTS.PAYMENT_UPDATED}' to room '${room}'`);
+    logger.info(`Emitting '${SOCKET_EVENTS.PAYMENT_UPDATED}' to room '${room}' and 'super-admin'`);
 
     SocketEventService.io.to(room).emit(SOCKET_EVENTS.PAYMENT_UPDATED, {
+      type: 'PAYMENT_UPDATED',
+      payment,
+    });
+    SocketEventService.io.to('super-admin').emit(SOCKET_EVENTS.PAYMENT_UPDATED, {
       type: 'PAYMENT_UPDATED',
       payment,
     });
