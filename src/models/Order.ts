@@ -31,6 +31,7 @@ export interface IOrder extends Document {
   orderStatus: OrderStatus;
   customerName?: string;
   customerPhone?: string;
+  vehicleNumber?: string;
   createdBy: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -130,6 +131,10 @@ const OrderSchema = new Schema<IOrder>(
       trim: true,
     },
     customerPhone: {
+      type: String,
+      trim: true,
+    },
+    vehicleNumber: {
       type: String,
       trim: true,
     },

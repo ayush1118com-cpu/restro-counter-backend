@@ -16,6 +16,7 @@ export const createOrderSchema = z.object({
   transactionReference: z.string().optional(),
   customerName: z.string().optional(),
   customerPhone: z.string().optional(),
+  vehicleNumber: z.string().optional(),
 });
 
 export const updateOrderStatusSchema = z.object({

@@ -1,6 +1,10 @@
 import { Restaurant } from '../models/Restaurant.js';
 import { User } from '../models/User.js';
 import { Counter } from '../models/Counter.js';
+import { Category } from '../models/Category.js';
+import { MenuItem } from '../models/MenuItem.js';
+import { Order } from '../models/Order.js';
+import { Payment } from '../models/Payment.js';
 import { hashPassword } from '../utils/password.js';
 import { AppError } from '../middleware/error.middleware.js';
 import { ERROR_CODES, RESTAURANT_STATUS, ROLES } from '../constants/index.js';
@@ -150,14 +154,30 @@ export class RestaurantService {
       restaurant.logo = logoData;
     }
 
-    if (data.name) restaurant.name = data.name;
-    if (data.ownerName) restaurant.ownerName = data.ownerName;
-    if (data.email) restaurant.email = data.email;
-    if (data.phone) restaurant.phone = data.phone;
-    if (data.address) restaurant.address = data.address;
-    if (data.city) restaurant.city = data.city;
+    if (data.name !== undefined) restaurant.name = data.name;
+    if (data.ownerName !== undefined) restaurant.ownerName = data.ownerName;
+    if (data.email !== undefined) restaurant.email = data.email;
+    if (data.phone !== undefined) restaurant.phone = data.phone;
+    if (data.address !== undefined) restaurant.address = data.address;
+    if (data.city !== undefined) restaurant.city = data.city;
+    if (data.gstin !== undefined) restaurant.gstin = data.gstin;
+    if (data.gstRate !== undefined) restaurant.gstRate = Number(data.gstRate);
+    if (data.receiptHeader !== undefined) restaurant.receiptHeader = data.receiptHeader;
+    if (data.receiptFooter !== undefined) restaurant.receiptFooter = data.receiptFooter;
 
     await restaurant.save();
+
+    // Sync admin user profile name/phone if updated
+    if (data.ownerName || data.phone) {
+      await User.updateMany(
+        { restaurantId: id, role: ROLES.RESTAURANT_ADMIN },
+        {
+          ...(data.ownerName ? { name: `${data.ownerName} (Counter Admin)` } : {}),
+          ...(data.phone ? { phone: data.phone } : {}),
+        }
+      );
+    }
+
     return restaurant;
   }
 
@@ -177,5 +197,53 @@ export class RestaurantService {
     }
 
     return restaurant;
+  }
+
+  public static async deleteRestaurant(id: string) {
+    const restaurant = await Restaurant.findById(id);
+    if (!restaurant) {
+      throw new AppError('Restaurant not found.', 404, ERROR_CODES.NOT_FOUND);
+    }
+
+    if (restaurant.logo?.public_id) {
+      try {
+        await CloudinaryService.deleteImage(restaurant.logo.public_id);
+      } catch (err) {
+        console.error('Failed to delete restaurant logo from Cloudinary:', err);
+      }
+    }
+
+    // Delete related entities for this restaurant
+    await Promise.all([
+      Restaurant.findByIdAndDelete(id),
+      User.deleteMany({ restaurantId: id }),
+      Category.deleteMany({ restaurantId: id }),
+      MenuItem.deleteMany({ restaurantId: id }),
+      Order.deleteMany({ restaurantId: id }),
+      Payment.deleteMany({ restaurantId: id }),
+      Counter.deleteMany({ restaurantId: id }),
+    ]);
+
+    return { id, name: restaurant.name };
+  }
+
+  public static async updateRestaurantAdminPassword(id: string, newPassword: string) {
+    const restaurant = await Restaurant.findById(id);
+    if (!restaurant) {
+      throw new AppError('Restaurant not found.', 404, ERROR_CODES.NOT_FOUND);
+    }
+
+    const hashedPassword = await hashPassword(newPassword);
+    const updatedUser = await User.findOneAndUpdate(
+      { restaurantId: id, role: ROLES.RESTAURANT_ADMIN },
+      { password: hashedPassword },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      throw new AppError('Admin user account for this restaurant was not found.', 404, ERROR_CODES.NOT_FOUND);
+    }
+
+    return { success: true, email: updatedUser.email, restaurantName: restaurant.name };
   }
 }

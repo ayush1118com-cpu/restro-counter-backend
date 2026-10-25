@@ -19,8 +19,16 @@ export const updateRestaurantSchema = z.object({
   phone: z.string().min(10).optional(),
   address: z.string().min(3).optional(),
   city: z.string().min(2).optional(),
+  gstin: z.string().optional(),
+  gstRate: z.union([z.number(), z.string().regex(/^\d+(\.\d+)?$/).transform(Number)]).optional(),
+  receiptHeader: z.string().optional(),
+  receiptFooter: z.string().optional(),
 });
 
 export const updateRestaurantStatusSchema = z.object({
   status: z.enum([RESTAURANT_STATUS.ACTIVE, RESTAURANT_STATUS.SUSPENDED, RESTAURANT_STATUS.BLOCKED]),
+});
+
+export const updateRestaurantPasswordSchema = z.object({
+  password: z.string().min(6, 'Password must be at least 6 characters'),
 });

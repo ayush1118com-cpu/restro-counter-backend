@@ -13,6 +13,10 @@ export interface IRestaurant extends Document {
   phone: string;
   address: string;
   city: string;
+  gstin?: string;
+  gstRate?: number;
+  receiptHeader?: string;
+  receiptFooter?: string;
   logo?: IRestaurantImage;
   status: RestaurantStatus;
   createdAt: Date;
@@ -51,6 +55,23 @@ const RestaurantSchema = new Schema<IRestaurant>(
       required: true,
       trim: true,
       index: true,
+    },
+    gstin: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    gstRate: {
+      type: Number,
+      default: 5,
+    },
+    receiptHeader: {
+      type: String,
+      default: 'SERV DESK - FAST POS',
+    },
+    receiptFooter: {
+      type: String,
+      default: 'Thank you for dining with us! Visit again.',
     },
     logo: {
       secure_url: { type: String },

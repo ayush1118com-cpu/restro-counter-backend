@@ -23,7 +23,7 @@ export class OrderService {
       throw new AppError('Authenticated user is not assigned to a restaurant.', 400, ERROR_CODES.BAD_REQUEST);
     }
 
-    const { items: requestItems, paymentMethod, discount = 0, tax = 0, confirmPayment = true, transactionReference, customerName, customerPhone } = data;
+    const { items: requestItems, paymentMethod, discount = 0, tax = 0, confirmPayment = true, transactionReference, customerName, customerPhone, vehicleNumber } = data;
 
     const menuItemIds = requestItems.map((item: any) => item.menuItemId);
     const dbMenuItems = await MenuItem.find({
@@ -102,6 +102,7 @@ export class OrderService {
       orderStatus: initialOrderStatus,
       customerName,
       customerPhone,
+      vehicleNumber,
       createdBy: user._id,
     });
 
