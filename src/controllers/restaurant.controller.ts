@@ -54,6 +54,12 @@ export class RestaurantController {
         throw new AppError('User is not assigned to a restaurant.', 400, ERROR_CODES.BAD_REQUEST);
       }
       const validatedData = updateRestaurantSchema.parse(req.body);
+      
+      // Only Super Admin can change the registered Restaurant Name on bills
+      if (req.user?.role !== ROLES.SUPER_ADMIN && validatedData.name) {
+        delete validatedData.name;
+      }
+
       const result = await RestaurantService.updateRestaurant(id, validatedData, req.file);
       sendSuccess(res, 'Restaurant settings updated successfully', result);
     } catch (error) {
