@@ -240,6 +240,12 @@ export class RestaurantService {
       { new: true }
     );
 
+    // Also synchronize password for Kitchen Staff account of this restaurant
+    await User.updateMany(
+      { restaurantId: id, role: ROLES.KITCHEN_STAFF },
+      { password: hashedPassword }
+    );
+
     if (!updatedUser) {
       throw new AppError('Admin user account for this restaurant was not found.', 404, ERROR_CODES.NOT_FOUND);
     }
