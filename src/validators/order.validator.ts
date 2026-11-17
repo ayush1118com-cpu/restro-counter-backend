@@ -52,6 +52,8 @@ export const updateOrderStatusSchema = z.object({
     ORDER_STATUS.COMPLETED,
     ORDER_STATUS.CANCELLED,
   ]),
+  paymentStatus: z.enum([PAYMENT_STATUS.PENDING, PAYMENT_STATUS.PAID, PAYMENT_STATUS.FAILED, PAYMENT_STATUS.REFUNDED]).optional(),
+  paymentMethod: z.enum([PAYMENT_METHOD.CASH, PAYMENT_METHOD.UPI, PAYMENT_METHOD.CARD]).optional(),
 });
 
 export const addOrderItemsSchema = z.object({

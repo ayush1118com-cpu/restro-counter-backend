@@ -458,7 +458,13 @@ export class OrderService {
     return { order, payment };
   }
 
-  public static async updateOrderStatus(restaurantId: string, id: string, newStatus: OrderStatus) {
+  public static async updateOrderStatus(
+    restaurantId: string,
+    id: string,
+    newStatus: OrderStatus,
+    paymentStatus?: string,
+    paymentMethod?: string
+  ) {
     const order = await Order.findOne({ _id: id, restaurantId });
     if (!order) {
       throw new AppError('Order not found.', 404, ERROR_CODES.NOT_FOUND);
@@ -476,7 +482,42 @@ export class OrderService {
     }
 
     order.orderStatus = newStatus;
+
+    if (paymentStatus) {
+      order.paymentStatus = paymentStatus as any;
+    } else if (newStatus === ORDER_STATUS.COMPLETED && order.paymentStatus === PAYMENT_STATUS.PENDING) {
+      order.paymentStatus = PAYMENT_STATUS.PAID;
+    }
+
+    if (paymentMethod) {
+      order.paymentMethod = paymentMethod as any;
+    }
+
     await order.save();
+
+    // If order is marked COMPLETED & PAID, ensure Payment record exists and is synced
+    if (order.paymentStatus === PAYMENT_STATUS.PAID) {
+      try {
+        const existingPayment = await Payment.findOne({ orderId: order._id });
+        if (!existingPayment) {
+          await Payment.create({
+            restaurantId: order.restaurantId,
+            orderId: order._id,
+            amount: order.grandTotal,
+            method: order.paymentMethod || PAYMENT_METHOD.CASH,
+            status: PAYMENT_STATUS.PAID,
+            paidAt: new Date(),
+          });
+        } else if (existingPayment.status !== PAYMENT_STATUS.PAID) {
+          existingPayment.status = PAYMENT_STATUS.PAID;
+          existingPayment.paidAt = new Date();
+          if (paymentMethod) existingPayment.method = paymentMethod as any;
+          await existingPayment.save();
+        }
+      } catch (paySyncErr) {
+        console.error('Error syncing payment on order completion:', paySyncErr);
+      }
+    }
 
     let eventName: string = SOCKET_EVENTS.ORDER_ACCEPTED;
     switch (newStatus) {

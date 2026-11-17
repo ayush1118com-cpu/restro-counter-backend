@@ -86,7 +86,9 @@ export class OrderController {
       const order = await OrderService.updateOrderStatus(
         req.user!.restaurantId!,
         id,
-        validatedData.status
+        validatedData.status,
+        validatedData.paymentStatus,
+        validatedData.paymentMethod
       );
       sendSuccess(res, `Order status updated to ${validatedData.status}`, order);
     } catch (error) {
