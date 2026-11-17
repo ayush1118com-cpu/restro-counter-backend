@@ -1,6 +1,25 @@
 import { z } from 'zod';
 import { RESTAURANT_STATUS } from '../constants/index.js';
 
+const booleanCoerce = z.preprocess((val) => {
+  if (val === undefined || val === null || val === '') return undefined;
+  if (val === 'true' || val === true || val === '1' || val === 1) return true;
+  if (val === 'false' || val === false || val === '0' || val === 0) return false;
+  return Boolean(val);
+}, z.boolean().optional());
+
+const numberCoerce = z.preprocess((val) => {
+  if (val === undefined || val === null || val === '') return undefined;
+  const num = Number(val);
+  return isNaN(num) ? undefined : num;
+}, z.number().min(0).optional());
+
+const enumCoerce = <T extends [string, ...string[]]>(values: T) =>
+  z.preprocess((val) => {
+    if (val === undefined || val === null || val === '') return undefined;
+    return val;
+  }, z.enum(values).optional());
+
 export const createRestaurantSchema = z.object({
   name: z.string().min(2, 'Restaurant name is required'),
   ownerName: z.string().min(2, 'Owner name is required'),
@@ -10,14 +29,17 @@ export const createRestaurantSchema = z.object({
   city: z.string().min(2, 'City is required'),
   adminEmail: z.string().email('Valid admin login email is required'),
   adminPassword: z.string().min(6, 'Admin password must be at least 6 characters'),
-  posEnabled: z.boolean().optional(),
-  tableQrEnabled: z.boolean().optional(),
-  hasTableQrOrdering: z.boolean().optional(),
-  subscriptionPlan: z.enum(['BOTH', 'POS_ONLY', 'SCANNER_ONLY']).optional(),
-  subscriptionPrice: z.number().min(0).optional(),
-  paymentMode: z.enum(['CASH', 'UPI', 'BANK_TRANSFER', 'COMPLIMENTARY']).optional(),
-  paymentReference: z.string().optional(),
-  paymentStatus: z.enum(['PAID', 'PENDING']).optional(),
+  status: enumCoerce([RESTAURANT_STATUS.ACTIVE, RESTAURANT_STATUS.SUSPENDED, RESTAURANT_STATUS.BLOCKED]),
+  posEnabled: booleanCoerce,
+  tableQrEnabled: booleanCoerce,
+  hasTableQrOrdering: booleanCoerce,
+  subscriptionPlan: enumCoerce(['BOTH', 'POS_ONLY', 'SCANNER_ONLY']),
+  subscriptionPrice: numberCoerce,
+  paymentMode: enumCoerce(['CASH', 'UPI', 'BANK_TRANSFER', 'COMPLIMENTARY']),
+  paymentReference: z.preprocess((v) => (v === undefined || v === null ? '' : String(v)), z.string().optional()),
+  paymentStatus: enumCoerce(['PAID', 'PENDING']),
+  kitchenEmail: z.string().email().optional(),
+  kitchenPassword: z.string().min(6).optional(),
 });
 
 export const updateRestaurantSchema = z.object({
@@ -28,17 +50,17 @@ export const updateRestaurantSchema = z.object({
   address: z.string().min(3).optional(),
   city: z.string().min(2).optional(),
   gstin: z.string().optional(),
-  gstRate: z.union([z.number(), z.string().regex(/^\d+(\.\d+)?$/).transform(Number)]).optional(),
+  gstRate: numberCoerce,
   receiptHeader: z.string().optional(),
   receiptFooter: z.string().optional(),
-  posEnabled: z.boolean().optional(),
-  tableQrEnabled: z.boolean().optional(),
-  hasTableQrOrdering: z.boolean().optional(),
-  subscriptionPlan: z.enum(['BOTH', 'POS_ONLY', 'SCANNER_ONLY']).optional(),
-  subscriptionPrice: z.number().min(0).optional(),
-  paymentMode: z.enum(['CASH', 'UPI', 'BANK_TRANSFER', 'COMPLIMENTARY']).optional(),
-  paymentReference: z.string().optional(),
-  paymentStatus: z.enum(['PAID', 'PENDING']).optional(),
+  posEnabled: booleanCoerce,
+  tableQrEnabled: booleanCoerce,
+  hasTableQrOrdering: booleanCoerce,
+  subscriptionPlan: enumCoerce(['BOTH', 'POS_ONLY', 'SCANNER_ONLY']),
+  subscriptionPrice: numberCoerce,
+  paymentMode: enumCoerce(['CASH', 'UPI', 'BANK_TRANSFER', 'COMPLIMENTARY']),
+  paymentReference: z.preprocess((v) => (v === undefined || v === null ? '' : String(v)), z.string().optional()),
+  paymentStatus: enumCoerce(['PAID', 'PENDING']),
 });
 
 export const updateRestaurantStatusSchema = z.object({

@@ -35,7 +35,7 @@ export class RestaurantService {
       address,
       city,
       logo: logoData,
-      status: RESTAURANT_STATUS.ACTIVE,
+      status: data.status || RESTAURANT_STATUS.ACTIVE,
       posEnabled: data.posEnabled !== undefined ? Boolean(data.posEnabled) : true,
       tableQrEnabled: data.tableQrEnabled !== undefined ? Boolean(data.tableQrEnabled) : (data.hasTableQrOrdering !== undefined ? Boolean(data.hasTableQrOrdering) : true),
       subscriptionPlan: data.subscriptionPlan || (data.posEnabled === false ? 'SCANNER_ONLY' : (data.tableQrEnabled === false ? 'POS_ONLY' : 'BOTH')),
