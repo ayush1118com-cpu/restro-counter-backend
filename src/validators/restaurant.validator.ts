@@ -13,6 +13,11 @@ export const createRestaurantSchema = z.object({
   posEnabled: z.boolean().optional(),
   tableQrEnabled: z.boolean().optional(),
   hasTableQrOrdering: z.boolean().optional(),
+  subscriptionPlan: z.enum(['BOTH', 'POS_ONLY', 'SCANNER_ONLY']).optional(),
+  subscriptionPrice: z.number().min(0).optional(),
+  paymentMode: z.enum(['CASH', 'UPI', 'BANK_TRANSFER', 'COMPLIMENTARY']).optional(),
+  paymentReference: z.string().optional(),
+  paymentStatus: z.enum(['PAID', 'PENDING']).optional(),
 });
 
 export const updateRestaurantSchema = z.object({
@@ -29,6 +34,11 @@ export const updateRestaurantSchema = z.object({
   posEnabled: z.boolean().optional(),
   tableQrEnabled: z.boolean().optional(),
   hasTableQrOrdering: z.boolean().optional(),
+  subscriptionPlan: z.enum(['BOTH', 'POS_ONLY', 'SCANNER_ONLY']).optional(),
+  subscriptionPrice: z.number().min(0).optional(),
+  paymentMode: z.enum(['CASH', 'UPI', 'BANK_TRANSFER', 'COMPLIMENTARY']).optional(),
+  paymentReference: z.string().optional(),
+  paymentStatus: z.enum(['PAID', 'PENDING']).optional(),
 });
 
 export const updateRestaurantStatusSchema = z.object({

@@ -21,6 +21,11 @@ export interface IRestaurant extends Document {
   status: RestaurantStatus;
   posEnabled?: boolean;
   tableQrEnabled?: boolean;
+  subscriptionPlan?: 'BOTH' | 'POS_ONLY' | 'SCANNER_ONLY';
+  subscriptionPrice?: number;
+  paymentMode?: 'CASH' | 'UPI' | 'BANK_TRANSFER' | 'COMPLIMENTARY';
+  paymentReference?: string;
+  paymentStatus?: 'PAID' | 'PENDING';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -86,6 +91,29 @@ const RestaurantSchema = new Schema<IRestaurant>(
     tableQrEnabled: {
       type: Boolean,
       default: true,
+    },
+    subscriptionPlan: {
+      type: String,
+      enum: ['BOTH', 'POS_ONLY', 'SCANNER_ONLY'],
+      default: 'BOTH',
+    },
+    subscriptionPrice: {
+      type: Number,
+      default: 899,
+    },
+    paymentMode: {
+      type: String,
+      enum: ['CASH', 'UPI', 'BANK_TRANSFER', 'COMPLIMENTARY'],
+      default: 'UPI',
+    },
+    paymentReference: {
+      type: String,
+      trim: true,
+    },
+    paymentStatus: {
+      type: String,
+      enum: ['PAID', 'PENDING'],
+      default: 'PAID',
     },
     status: {
       type: String,

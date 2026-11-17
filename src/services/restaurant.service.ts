@@ -38,6 +38,11 @@ export class RestaurantService {
       status: RESTAURANT_STATUS.ACTIVE,
       posEnabled: data.posEnabled !== undefined ? Boolean(data.posEnabled) : true,
       tableQrEnabled: data.tableQrEnabled !== undefined ? Boolean(data.tableQrEnabled) : (data.hasTableQrOrdering !== undefined ? Boolean(data.hasTableQrOrdering) : true),
+      subscriptionPlan: data.subscriptionPlan || (data.posEnabled === false ? 'SCANNER_ONLY' : (data.tableQrEnabled === false ? 'POS_ONLY' : 'BOTH')),
+      subscriptionPrice: data.subscriptionPrice !== undefined ? Number(data.subscriptionPrice) : (data.subscriptionPlan === 'BOTH' || (!data.subscriptionPlan && data.posEnabled !== false && data.tableQrEnabled !== false) ? 899 : 499),
+      paymentMode: data.paymentMode || 'UPI',
+      paymentReference: data.paymentReference || '',
+      paymentStatus: data.paymentStatus || 'PAID',
     });
 
     // Hash passwords in parallel
@@ -268,6 +273,11 @@ export class RestaurantService {
     if (data.posEnabled !== undefined) restaurant.posEnabled = Boolean(data.posEnabled);
     if (data.tableQrEnabled !== undefined) restaurant.tableQrEnabled = Boolean(data.tableQrEnabled);
     if (data.hasTableQrOrdering !== undefined) restaurant.tableQrEnabled = Boolean(data.hasTableQrOrdering);
+    if (data.subscriptionPlan !== undefined) restaurant.subscriptionPlan = data.subscriptionPlan;
+    if (data.subscriptionPrice !== undefined) restaurant.subscriptionPrice = Number(data.subscriptionPrice);
+    if (data.paymentMode !== undefined) restaurant.paymentMode = data.paymentMode;
+    if (data.paymentReference !== undefined) restaurant.paymentReference = data.paymentReference;
+    if (data.paymentStatus !== undefined) restaurant.paymentStatus = data.paymentStatus;
 
     await restaurant.save();
 
