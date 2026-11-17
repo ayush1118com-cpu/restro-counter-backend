@@ -150,7 +150,13 @@ export class OrderService {
   }
 
   public static async createPublicTableOrder(restaurantId: string, data: any): Promise<any> {
-    const restaurant = await Restaurant.findById(restaurantId);
+    let restaurant = null;
+    if (mongoose.Types.ObjectId.isValid(restaurantId)) {
+      restaurant = await Restaurant.findById(restaurantId);
+    }
+    if (!restaurant) {
+      restaurant = await Restaurant.findOne({ slug: restaurantId });
+    }
     if (!restaurant) {
       throw new AppError('Restaurant not found.', 404, ERROR_CODES.NOT_FOUND);
     }
@@ -161,6 +167,7 @@ export class OrderService {
       throw new AppError('Table QR ordering is currently disabled for this restaurant.', 403, ERROR_CODES.FORBIDDEN);
     }
 
+    const restObjectId = restaurant._id;
     const gstRate = restaurant.gstRate !== undefined ? Number(restaurant.gstRate) : 5;
     const items = data.items || [];
     let subtotal = 0;
@@ -187,13 +194,27 @@ export class OrderService {
     }
 
     // Check if there is an active running order for this table
+    const safeTableRegex = new RegExp(`^${data.tableNumber.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
     const activeOrder = !data.forceNewOrder
       ? await Order.findOne({
-          restaurantId,
-          tableNumber: { $regex: new RegExp(`^${data.tableNumber.trim()}$`, 'i') },
+          restaurantId: restObjectId,
+          tableNumber: { $regex: safeTableRegex },
           orderStatus: { $in: [ORDER_STATUS.NEW, ORDER_STATUS.ACCEPTED, ORDER_STATUS.PREPARING, ORDER_STATUS.READY] },
-        })
+        }).sort({ createdAt: -1 })
       : null;
+
+    // If starting a brand new order, customer name and contact number are strictly required
+    const custName = (data.customerName || '').trim();
+    const custPhone = (data.customerPhone || '').trim();
+    if (!activeOrder) {
+      if (!custName) {
+        throw new AppError('Customer Name is required to place your table order.', 400, ERROR_CODES.VALIDATION_ERROR);
+      }
+      const digitsOnly = custPhone.replace(/\D/g, '');
+      if (!custPhone || digitsOnly.length < 10) {
+        throw new AppError('A valid 10-digit Contact Number is required to place your table order.', 400, ERROR_CODES.VALIDATION_ERROR);
+      }
+    }
 
     if (activeOrder) {
       // Append / merge items into existing active table order (Single Consolidated Bill)
@@ -221,11 +242,11 @@ export class OrderService {
       if (data.notes) {
         activeOrder.notes = activeOrder.notes ? `${activeOrder.notes} | ${data.notes}` : data.notes;
       }
-      if (data.customerName && (!activeOrder.customerName || activeOrder.customerName.includes('Guest'))) {
-        activeOrder.customerName = data.customerName;
+      if (custName && (!activeOrder.customerName || activeOrder.customerName.includes('Guest'))) {
+        activeOrder.customerName = custName;
       }
-      if (data.customerPhone && !activeOrder.customerPhone) {
-        activeOrder.customerPhone = data.customerPhone;
+      if (custPhone && (!activeOrder.customerPhone || !activeOrder.customerPhone.trim())) {
+        activeOrder.customerPhone = custPhone;
       }
 
       // Set orderStatus to PREPARING if it was READY or ACCEPTED so chef prepares the extra items
@@ -237,25 +258,27 @@ export class OrderService {
 
       const populatedUpdated = await Order.findById(activeOrder._id).lean();
 
-      SocketEventService.emitOrderStatusChange(restaurantId.toString(), SOCKET_EVENTS.ORDER_PREPARING, populatedUpdated);
-      SocketEventService.emitNewOrder(restaurantId.toString(), {
+      SocketEventService.emitOrderStatusChange(restObjectId.toString(), SOCKET_EVENTS.ORDER_PREPARING, populatedUpdated);
+      SocketEventService.emitNewOrder(restObjectId.toString(), {
         ...populatedUpdated,
+        id: populatedUpdated!._id.toString(),
         isAppended: true,
         newItems: calculatedItems,
       });
 
       return {
         ...populatedUpdated,
+        id: populatedUpdated!._id.toString(),
         isAppended: true,
       };
     }
 
     const tax = Math.round(subtotal * (gstRate / 100));
     const grandTotal = subtotal + tax;
-    const orderNumber = await getNextOrderNumber(restaurantId);
+    const orderNumber = await getNextOrderNumber(restObjectId.toString());
 
     const order = await Order.create({
-      restaurantId,
+      restaurantId: restObjectId,
       orderNumber,
       items: calculatedItems,
       subtotal,
@@ -266,24 +289,38 @@ export class OrderService {
       paymentStatus: PAYMENT_STATUS.PENDING,
       orderStatus: ORDER_STATUS.NEW,
       orderType: 'TABLE_QR',
-      tableNumber: data.tableNumber,
+      tableNumber: data.tableNumber.trim(),
       notes: data.notes,
-      customerName: data.customerName || `${data.tableNumber} Guest`,
-      customerPhone: data.customerPhone,
+      customerName: custName,
+      customerPhone: custPhone,
     });
 
     const populatedOrder = await Order.findById(order._id).lean();
 
-    SocketEventService.emitNewOrder(restaurantId.toString(), populatedOrder);
+    SocketEventService.emitNewOrder(restObjectId.toString(), {
+      ...populatedOrder,
+      id: populatedOrder!._id.toString(),
+    });
 
     return populatedOrder;
   }
 
   public static async getActiveTableOrder(restaurantId: string, tableNumber: string) {
     if (!restaurantId || !tableNumber) return null;
+    let restObjectId: any = restaurantId;
+    if (mongoose.Types.ObjectId.isValid(restaurantId)) {
+      restObjectId = new mongoose.Types.ObjectId(restaurantId);
+    } else {
+      const rest = await Restaurant.findOne({ slug: restaurantId }).lean();
+      if (rest) {
+        restObjectId = rest._id;
+      }
+    }
+
+    const safeTableRegex = new RegExp(`^${tableNumber.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
     const order = await Order.findOne({
-      restaurantId,
-      tableNumber: { $regex: new RegExp(`^${tableNumber.trim()}$`, 'i') },
+      restaurantId: restObjectId,
+      tableNumber: { $regex: safeTableRegex },
       orderStatus: { $in: [ORDER_STATUS.NEW, ORDER_STATUS.ACCEPTED, ORDER_STATUS.PREPARING, ORDER_STATUS.READY] },
     })
       .sort({ createdAt: -1 })
@@ -292,7 +329,7 @@ export class OrderService {
     if (!order) return null;
 
     return {
-      id: order._id,
+      id: order._id.toString(),
       orderNumber: order.orderNumber,
       restaurantId: order.restaurantId,
       status: order.orderStatus,
