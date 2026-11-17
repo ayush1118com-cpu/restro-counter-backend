@@ -260,6 +260,7 @@ export class MenuService {
             city: restaurant.city,
             phone: restaurant.phone,
             gstRate: restaurant.gstRate,
+            posEnabled: restaurant.posEnabled !== false,
             tableQrEnabled: restaurant.tableQrEnabled !== false,
             hasTableQrOrdering: restaurant.tableQrEnabled !== false,
           }

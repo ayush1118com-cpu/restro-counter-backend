@@ -36,69 +36,84 @@ export class RestaurantService {
       city,
       logo: logoData,
       status: RESTAURANT_STATUS.ACTIVE,
+      posEnabled: data.posEnabled !== undefined ? Boolean(data.posEnabled) : true,
+      tableQrEnabled: data.tableQrEnabled !== undefined ? Boolean(data.tableQrEnabled) : (data.hasTableQrOrdering !== undefined ? Boolean(data.hasTableQrOrdering) : true),
     });
 
-    await Counter.create({
-      restaurantId: restaurant._id,
-      orderSequence: 1000,
-    });
-
-    const hashedPassword = await hashPassword(adminPassword);
-    const adminUser = await User.create({
-      name: `${ownerName} (Counter Admin)`,
-      email: adminEmail.toLowerCase(),
-      phone,
-      password: hashedPassword,
-      role: ROLES.RESTAURANT_ADMIN,
-      restaurantId: restaurant._id,
-      isActive: true,
-    });
-
-    // Auto-create Kitchen Staff account for KDS station
+    // Hash passwords in parallel
     const kitchenEmail = data.kitchenEmail ? data.kitchenEmail.toLowerCase() : `kitchen.${adminEmail.toLowerCase()}`;
     const kitchenPassword = data.kitchenPassword ? data.kitchenPassword : adminPassword;
-    const hashedKitchenPassword = await hashPassword(kitchenPassword);
 
-    const kitchenUser = await User.create({
-      name: `${name} (Kitchen Chef)`,
-      email: kitchenEmail,
-      phone,
-      password: hashedKitchenPassword,
-      role: ROLES.KITCHEN_STAFF,
-      restaurantId: restaurant._id,
-      isActive: true,
-    });
+    const [hashedPassword, hashedKitchenPassword] = await Promise.all([
+      hashPassword(adminPassword),
+      hashPassword(kitchenPassword),
+    ]);
 
-    // Auto-seed starter menu items & categories for newly created outlet
+    // Create Counter sequence and isolated User accounts in parallel
+    const [, adminUser, kitchenUser] = await Promise.all([
+      Counter.create({
+        restaurantId: restaurant._id,
+        orderSequence: 1000,
+      }),
+      User.create({
+        name: `${ownerName} (Counter Admin)`,
+        email: adminEmail.toLowerCase(),
+        phone,
+        password: hashedPassword,
+        role: ROLES.RESTAURANT_ADMIN,
+        restaurantId: restaurant._id,
+        isActive: true,
+      }),
+      User.create({
+        name: `${name} (Kitchen Chef)`,
+        email: kitchenEmail,
+        phone,
+        password: hashedKitchenPassword,
+        role: ROLES.KITCHEN_STAFF,
+        restaurantId: restaurant._id,
+        isActive: true,
+      }),
+    ]);
+
+    // Auto-seed starter menu items & categories in bulk using insertMany for ultra-fast creation
     try {
       const templateCategories = await Category.find({ name: { $ne: 'All' } }).limit(25).lean();
       const uniqueCatNames = Array.from(new Set(templateCategories.map((c) => c.name)));
-      const catMap = new Map<string, mongoose.Types.ObjectId>();
 
-      for (let i = 0; i < uniqueCatNames.length; i++) {
-        const catName = uniqueCatNames[i];
-        const newCat = await Category.create({
-          restaurantId: restaurant._id,
-          name: catName,
-          description: `${catName} items`,
-          sortOrder: i,
-          isActive: true,
-        });
-        catMap.set(catName, newCat._id as mongoose.Types.ObjectId);
+      const categoriesToInsert = uniqueCatNames.map((catName, i) => ({
+        restaurantId: restaurant._id,
+        name: catName,
+        description: `${catName} items`,
+        sortOrder: i,
+        isActive: true,
+      }));
+
+      const createdCats = categoriesToInsert.length > 0
+        ? await Category.insertMany(categoriesToInsert)
+        : [];
+
+      const catMap = new Map<string, mongoose.Types.ObjectId>();
+      for (const cat of createdCats) {
+        catMap.set(cat.name, cat._id as mongoose.Types.ObjectId);
       }
 
-      // Clone sample menu items
-      const templateItems = await MenuItem.find({ isActive: true }).limit(84).populate('categoryId', 'name').lean();
-      const seenItemNames = new Set<string>();
+      const defaultCatId = createdCats.length > 0 ? (createdCats[0]._id as mongoose.Types.ObjectId) : undefined;
 
-      for (const item of templateItems) {
-        if (seenItemNames.has(item.name)) continue;
-        seenItemNames.add(item.name);
-        const catName = (typeof item.categoryId === 'object' && (item.categoryId as any)?.name) ? (item.categoryId as any).name : 'General';
-        const assignedCatId = catMap.get(catName) || Array.from(catMap.values())[0];
+      // Clone sample menu items using insertMany in a single bulk operation
+      if (defaultCatId) {
+        const templateItems = await MenuItem.find({ isActive: true }).limit(84).populate('categoryId', 'name').lean();
+        const seenItemNames = new Set<string>();
+        const itemsToInsert: any[] = [];
 
-        if (assignedCatId) {
-          await MenuItem.create({
+        for (const item of templateItems) {
+          if (seenItemNames.has(item.name)) continue;
+          seenItemNames.add(item.name);
+          const catName = (typeof item.categoryId === 'object' && (item.categoryId as any)?.name)
+            ? (item.categoryId as any).name
+            : 'General';
+          const assignedCatId = catMap.get(catName) || defaultCatId;
+
+          itemsToInsert.push({
             restaurantId: restaurant._id,
             categoryId: assignedCatId,
             name: item.name,
@@ -110,6 +125,10 @@ export class RestaurantService {
             isActive: true,
             image: item.image,
           });
+        }
+
+        if (itemsToInsert.length > 0) {
+          await MenuItem.insertMany(itemsToInsert);
         }
       }
     } catch (menuSeedErr) {
@@ -246,6 +265,7 @@ export class RestaurantService {
     if (data.gstRate !== undefined) restaurant.gstRate = Number(data.gstRate);
     if (data.receiptHeader !== undefined) restaurant.receiptHeader = data.receiptHeader;
     if (data.receiptFooter !== undefined) restaurant.receiptFooter = data.receiptFooter;
+    if (data.posEnabled !== undefined) restaurant.posEnabled = Boolean(data.posEnabled);
     if (data.tableQrEnabled !== undefined) restaurant.tableQrEnabled = Boolean(data.tableQrEnabled);
     if (data.hasTableQrOrdering !== undefined) restaurant.tableQrEnabled = Boolean(data.hasTableQrOrdering);
 

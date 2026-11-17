@@ -10,6 +10,9 @@ export const createRestaurantSchema = z.object({
   city: z.string().min(2, 'City is required'),
   adminEmail: z.string().email('Valid admin login email is required'),
   adminPassword: z.string().min(6, 'Admin password must be at least 6 characters'),
+  posEnabled: z.boolean().optional(),
+  tableQrEnabled: z.boolean().optional(),
+  hasTableQrOrdering: z.boolean().optional(),
 });
 
 export const updateRestaurantSchema = z.object({
@@ -23,6 +26,7 @@ export const updateRestaurantSchema = z.object({
   gstRate: z.union([z.number(), z.string().regex(/^\d+(\.\d+)?$/).transform(Number)]).optional(),
   receiptHeader: z.string().optional(),
   receiptFooter: z.string().optional(),
+  posEnabled: z.boolean().optional(),
   tableQrEnabled: z.boolean().optional(),
   hasTableQrOrdering: z.boolean().optional(),
 });

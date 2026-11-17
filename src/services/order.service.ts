@@ -24,6 +24,15 @@ export class OrderService {
       throw new AppError('Authenticated user is not assigned to a restaurant.', 400, ERROR_CODES.BAD_REQUEST);
     }
 
+    const restaurant = await Restaurant.findById(restaurantId);
+    if (!restaurant) {
+      throw new AppError('Restaurant not found.', 404, ERROR_CODES.NOT_FOUND);
+    }
+
+    if (data.orderType !== 'TABLE_QR' && restaurant.posEnabled === false) {
+      throw new AppError('Counter POS module is disabled for this restaurant.', 403, ERROR_CODES.FORBIDDEN);
+    }
+
     const {
       items: requestItems,
       paymentMethod,
